@@ -452,6 +452,12 @@
             transform: scale(0.97);
         }
 
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-emerald { background: var(--emerald); color: #ffffff; }
         .btn-dark { background: var(--bg-dark); color: #ffffff; }
         .btn-indigo { background: var(--indigo); color: #ffffff; }
@@ -702,7 +708,7 @@
             border-radius: 50%;
         }
 
-        /* Barra de Navegación Inferior Fija (5 Pestañas) */
+        /* Barra de Navegación Inferior Fija */
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -720,7 +726,7 @@
             max-width: 580px;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 4px;
         }
 
@@ -752,6 +758,23 @@
         .nav-label {
             font-size: 10px;
             font-weight: 800;
+        }
+
+        @media (max-width: 380px) {
+            .nav-grid {
+                gap: 0;
+            }
+
+            .nav-btn {
+                padding-left: 0;
+                padding-right: 0;
+            }
+
+            .nav-label {
+                font-size: 9px;
+                letter-spacing: -0.03em;
+                white-space: nowrap;
+            }
         }
 
         /* Modales y Toast */
@@ -881,7 +904,7 @@
     </header>
 
     <!-- =====================================================================
-         CONTENIDO PRINCIPAL (5 VISTAS)
+         CONTENIDO PRINCIPAL (6 VISTAS)
          ===================================================================== -->
     <main>
 
@@ -936,6 +959,10 @@
                         <span id="kpi-net-bs" class="kpi-sub" style="color:#047857;">0 Bs BCV</span>
                     </div>
                 </div>
+
+                <button type="button" id="fuel-quick-status" class="btn btn-soft" style="width:100%;margin:0 0 8px;text-align:left;font-size:11px;" onclick="switchView('fuel')">
+                    Configura tu gasolina para estimar la autonomía
+                </button>
 
                 <div class="btn-grid-3">
                     <button type="button" class="btn btn-emerald" style="font-size:11px;padding:9px 6px;" onclick="openSaveNetModal()">Guardar en Meta</button>
@@ -1020,7 +1047,89 @@
         </section>
 
         <!-- =================================================================
-             2. VISTA GPS RETORNO A YARITAGUA
+             3. VISTA DE GASOLINA Y AUTONOMÍA
+             ================================================================= -->
+        <section id="view-fuel" class="view-section hidden">
+            <div class="card card-dark tabular">
+                <div class="flex-between" style="margin-bottom:8px;">
+                    <div>
+                        <span class="eyebrow" style="color:#fbbf24;">Control de combustible</span>
+                        <h2 class="card-title" style="color:#fff;">Autonomía de gasolina</h2>
+                    </div>
+                    <span id="fuel-status-pill" class="pill-badge" style="background:#1e293b;border-color:#475569;color:#cbd5e1;">Sin configurar</span>
+                </div>
+                <p id="fuel-alert" role="status" aria-live="polite" style="font-size:12px;color:#cbd5e1;margin-bottom:10px;">
+                    Configura la capacidad del tanque, el rendimiento y el nivel actual para empezar.
+                </p>
+                <div class="kpi-grid-4" style="margin:10px 0;">
+                    <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
+                        <span class="kpi-label" style="color:#94a3b8;">Autonomía estimada</span>
+                        <strong id="fuel-range-km" class="kpi-val" style="color:#34d399;">— km</strong>
+                        <span class="kpi-sub">antes de repostar</span>
+                    </div>
+                    <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
+                        <span class="kpi-label" style="color:#94a3b8;">Gasolina restante</span>
+                        <strong id="fuel-remaining-l" class="kpi-val" style="color:#fbbf24;">— L</strong>
+                        <span id="fuel-tank-capacity" class="kpi-sub">del tanque</span>
+                    </div>
+                    <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
+                        <span class="kpi-label" style="color:#94a3b8;">Consumo estimado</span>
+                        <strong id="fuel-consumption" class="kpi-val" style="color:#fff;">— L/100 km</strong>
+                        <span id="fuel-efficiency" class="kpi-sub">— km/L</span>
+                    </div>
+                    <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
+                        <span class="kpi-label" style="color:#94a3b8;">Distancia registrada</span>
+                        <strong id="fuel-distance" class="kpi-val" style="color:#38bdf8;">— km</strong>
+                        <span class="kpi-sub">desde el último nivel</span>
+                    </div>
+                </div>
+                <div style="height:10px;background:#334155;border-radius:999px;overflow:hidden;">
+                    <div id="fuel-level-bar" style="height:100%;width:0;background:#34d399;border-radius:999px;transition:width .2s;"></div>
+                </div>
+                <p id="fuel-level-caption" style="font-size:10px;color:#94a3b8;margin-top:5px;">Nivel estimado del tanque</p>
+            </div>
+
+            <div class="card">
+                <h3 class="card-title" style="font-size:14px;margin-bottom:4px;">Datos de tu moto</h3>
+                <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
+                    El estimado usa los kilómetros que registres aquí y el rendimiento real aproximado de tu moto. El aviso aparece al quedar 30 km o menos.
+                </p>
+                <form id="fuel-setup-form" onsubmit="handleSaveFuelSetup(event)">
+                    <div class="form-grid-2">
+                        <div>
+                            <label class="field-label" for="fuel-capacity-input">Capacidad del tanque (L)</label>
+                            <input type="number" id="fuel-capacity-input" class="input-control" min="0.1" step="0.1" required placeholder="Ej. 10">
+                        </div>
+                        <div>
+                            <label class="field-label" for="fuel-efficiency-input">Rendimiento promedio (km/L)</label>
+                            <input type="number" id="fuel-efficiency-input" class="input-control" min="0.1" step="0.1" required placeholder="Ej. 30">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <label class="field-label" for="fuel-level-input">Gasolina actual conocida (L)</label>
+                        <input type="number" id="fuel-level-input" class="input-control" min="0" step="0.1" required placeholder="Ej. 5">
+                    </div>
+                    <button type="submit" class="btn btn-emerald" style="width:100%;">Guardar datos y nivel actual</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3 class="card-title" style="font-size:14px;margin-bottom:8px;">Registrar repostaje</h3>
+                <form onsubmit="handleAddFuel(event)">
+                    <div style="margin-bottom:8px;">
+                        <label class="field-label" for="fuel-added-input">Litros añadidos</label>
+                        <input type="number" id="fuel-added-input" class="input-control" min="0.1" step="0.1" required placeholder="Ej. 3">
+                    </div>
+                    <div class="btn-grid-2">
+                        <button type="submit" class="btn btn-dark">Sumar litros repostados</button>
+                        <button type="button" class="btn btn-soft" onclick="handleFillFuelTank()">Llenar tanque</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- =================================================================
+             4. VISTA GPS RETORNO A YARITAGUA
              ================================================================= -->
         <section id="view-gps" class="view-section hidden">
             <div class="card card-dark">
@@ -1070,11 +1179,38 @@
                     </div>
                 </div>
 
-                <div class="btn-grid-2">
+                <div class="btn-grid-2" style="grid-template-columns:1fr;">
                     <button type="button" id="btn-live-gps" class="btn btn-emerald" onclick="toggleRealGps()">Iniciar GPS Real</button>
-                    <button type="button" id="btn-sim-gps" class="btn btn-indigo" onclick="toggleSimulatedGps()">Simular GPS Ruta</button>
                 </div>
             </div>
+
+                <div class="card">
+                    <div class="flex-between" style="margin-bottom:6px;">
+                        <div>
+                            <span class="eyebrow" style="color:var(--amber);">Sin pasajero</span>
+                            <h3 class="card-title" style="font-size:14px;">Medir carrera vacía</h3>
+                        </div>
+                        <span id="empty-gps-status" class="pill-badge" aria-live="polite" style="background:var(--sky-bg);color:var(--sky);">Detenido</span>
+                    </div>
+                    <p id="empty-gps-message" role="status" aria-live="polite" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
+                        Usa el GPS para medir el recorrido sin pasajero. Se registran recorridos desde 50 m; no se guardan coordenadas.
+                    </p>
+                    <div class="kpi-grid-4 tabular" style="margin:8px 0;">
+                        <div class="kpi-box">
+                            <span class="kpi-label">Distancia vacía</span>
+                            <strong id="empty-gps-distance" class="kpi-val" style="color:var(--sky);">0.00 km</strong>
+                        </div>
+                        <div class="kpi-box cost">
+                            <span class="kpi-label">Costo moto estimado</span>
+                            <strong id="empty-gps-cost" class="kpi-val" style="color:var(--amber);">$0.00</strong>
+                        </div>
+                    </div>
+                    <div class="btn-grid-2">
+                        <button type="button" id="empty-gps-start" class="btn btn-emerald" onclick="startEmptyGpsTracking()">Iniciar medición GPS</button>
+                        <button type="button" id="empty-gps-stop" class="btn btn-dark" onclick="finishEmptyGpsTracking()" disabled>Finalizar y guardar km</button>
+                    </div>
+                    <button type="button" id="empty-gps-cancel" class="btn btn-soft" style="width:100%;margin-top:8px;" onclick="cancelEmptyGpsTracking()" disabled>Cancelar medición</button>
+                </div>
 
             <!-- Registro de Pasajero / Encomienda de Retorno -->
             <div class="card">
@@ -1118,7 +1254,7 @@
         </section>
 
         <!-- =================================================================
-             3. VISTA QUINCENA & METAS DE AHORRO
+             5. VISTA QUINCENA & METAS DE AHORRO
              ================================================================= -->
         <section id="view-quincena" class="view-section hidden">
             <!-- Resumen Flujo Quincenal -->
@@ -1183,7 +1319,7 @@
         </section>
 
         <!-- =================================================================
-             4. VISTA CALENDARIO MENSUAL & AGENDAMIENTO
+             6. VISTA CALENDARIO MENSUAL & AGENDAMIENTO
              ================================================================= -->
         <section id="view-calendario" class="view-section hidden">
             <div class="card">
@@ -1270,7 +1406,7 @@
         </section>
 
         <!-- =================================================================
-             5. VISTA PERSONAL (FINANZAS PERSONALES, COTIZADOR Y RESPALDO BD)
+             7. VISTA PERSONAL (FINANZAS PERSONALES, COTIZADOR Y RESPALDO BD)
              ================================================================= -->
         <section id="view-personal" class="view-section hidden">
             <!-- Sub-pestañas -->
@@ -1427,7 +1563,7 @@
     </main>
 
     <!-- =====================================================================
-         BARRA DE NAVEGACIÓN INFERIOR FIJA (5 PESTAÑAS)
+         BARRA DE NAVEGACIÓN INFERIOR FIJA (6 PESTAÑAS)
          ===================================================================== -->
     <nav class="bottom-nav">
         <div class="nav-grid">
@@ -1437,7 +1573,11 @@
             </button>
             <button type="button" id="nav-gps" class="nav-btn" onclick="switchView('gps')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-                <span class="nav-label">GPS Retorno</span>
+                <span class="nav-label">GPS</span>
+            </button>
+            <button type="button" id="nav-fuel" class="nav-btn" onclick="switchView('fuel')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v17"/><path d="M3 22h14"/><path d="M7 7h6v5H7z"/><path d="M17 8h2l2 2v8a2 2 0 0 1-4 0v-4"/></svg>
+                <span class="nav-label">Gasolina</span>
             </button>
             <button type="button" id="nav-quincena" class="nav-btn" onclick="switchView('quincena')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
@@ -1642,6 +1782,21 @@
                 return { dist, motoCost, suggested, net };
             },
 
+            estimateFuel(levelLiters, efficiencyKmPerL, traveledKm) {
+                const level = Math.max(0, Number(levelLiters) || 0);
+                const efficiency = Number(efficiencyKmPerL);
+                const distance = Math.max(0, Number(traveledKm) || 0);
+                if (!(efficiency > 0)) return null;
+                const consumedLiters = distance / efficiency;
+                const remainingLiters = Math.max(0, level - consumedLiters);
+                return {
+                    consumedLiters,
+                    remainingLiters,
+                    rangeKm: remainingLiters * efficiency,
+                    distanceKm: distance
+                };
+            },
+
             calcQuincena(items, ridesNet = 0) {
                 let fixedIncome = 0;
                 let totalExpense = 0;
@@ -1693,6 +1848,13 @@
                 lastSync: ''
             },
             fuelMode: 'intl',
+            fuel: {
+                tankCapacityL: 0,
+                efficiencyKmPerL: 0,
+                levelLiters: 0,
+                levelSetAt: 0,
+                distanceSinceLevel: 0
+            },
             convDir: 'usd_to_bs',
             rides: [],
             personalTxs: [],
@@ -1753,10 +1915,14 @@
                 data.rates[key] !== undefined && (!Number.isFinite(Number(data.rates[key])) || Number(data.rates[key]) <= 0))) {
                 throw new Error('Las tasas del respaldo deben ser números positivos.');
             }
+            if (data.fuel !== undefined && (!data.fuel || typeof data.fuel !== 'object' || Array.isArray(data.fuel))) {
+                throw new Error('Los datos de gasolina del respaldo no son válidos.');
+            }
             const normalized = {
                 ...JSON.parse(JSON.stringify(INITIAL_STATE)),
                 ...data,
                 rates: { ...INITIAL_STATE.rates, ...(data.rates || {}) },
+                fuel: { ...INITIAL_STATE.fuel, ...(data.fuel || {}) },
                 rides: Array.isArray(data.rides) ? data.rides : [],
                 personalTxs: Array.isArray(data.personalTxs) ? data.personalTxs : [],
                 budgetItems: Array.isArray(data.budgetItems) && data.budgetItems.length ? data.budgetItems : INITIAL_STATE.budgetItems,
@@ -1764,6 +1930,21 @@
                 goalTransfers: Array.isArray(data.goalTransfers) ? data.goalTransfers : []
             };
             if (!['intl', 'patria'].includes(normalized.fuelMode)) normalized.fuelMode = 'intl';
+            const fuel = normalized.fuel;
+            fuel.tankCapacityL = Number(fuel.tankCapacityL);
+            fuel.efficiencyKmPerL = Number(fuel.efficiencyKmPerL);
+            fuel.levelLiters = Number(fuel.levelLiters);
+            fuel.levelSetAt = Number(fuel.levelSetAt);
+            fuel.distanceSinceLevel = Number(fuel.distanceSinceLevel);
+            if ([fuel.tankCapacityL, fuel.efficiencyKmPerL, fuel.levelLiters, fuel.levelSetAt, fuel.distanceSinceLevel].some(value =>
+                !Number.isFinite(Number(value)) || Number(value) < 0) ||
+                (fuel.tankCapacityL === 0) !== (fuel.efficiencyKmPerL === 0) ||
+                fuel.levelLiters > fuel.tankCapacityL ||
+                (fuel.tankCapacityL > 0 && fuel.levelSetAt <= 0) ||
+                (fuel.tankCapacityL === 0 &&
+                    (fuel.levelLiters !== 0 || fuel.levelSetAt !== 0 || fuel.distanceSinceLevel !== 0))) {
+                throw new Error('Los datos de gasolina del respaldo deben ser coherentes y no negativos.');
+            }
             normalized.rides = normalized.rides.map(ride => ride && typeof ride === 'object' ? ({
                 ...ride,
                 fuelMode: ride.fuelMode === 'patria' || ride.fuelMode === 'intl'
@@ -1773,7 +1954,13 @@
             for (const ride of normalized.rides) {
                 if (!ride || typeof ride.id !== 'string' || typeof ride.date !== 'string' ||
                     !Number.isFinite(Number(ride.amount)) || !Number.isFinite(Number(ride.km)) ||
-                    typeof ride.note !== 'string') {
+                    typeof ride.note !== 'string' ||
+                    (ride.createdAt !== undefined && (!Number.isFinite(Number(ride.createdAt)) || Number(ride.createdAt) < 0)) ||
+                    (ride.fuelLevelSetAt !== undefined &&
+                        (!Number.isFinite(Number(ride.fuelLevelSetAt)) || Number(ride.fuelLevelSetAt) < 0)) ||
+                    (ride.fuelDistanceTracked !== undefined &&
+                        (!Number.isFinite(Number(ride.fuelDistanceTracked)) || Number(ride.fuelDistanceTracked) < 0)) ||
+                    (ride.rideType !== undefined && !['service', 'empty'].includes(ride.rideType))) {
                     throw new Error('El respaldo contiene carreras inválidas.');
                 }
             }
@@ -1849,6 +2036,11 @@
                 () => MotoEngine.detectOriginNear(10.0331, -69.2633).name === 'Cabudare',
                 () => MotoEngine.detectOriginNear(10.0678, -69.3474).name === 'Barquisimeto',
                 () => MotoEngine.quoteFare(2, false, false).suggested === 1.50 && MotoEngine.quoteFare(10, true, true).suggested === 3.90,
+                () => {
+                    const fuel = MotoEngine.estimateFuel(5, 25, 50);
+                    return fuel.remainingLiters === 3 && fuel.rangeKm === 75;
+                },
+                () => MotoEngine.estimateFuel(1, 20, 40).remainingLiters === 0,
                 () => MotoEngine.calcQuincena(INITIAL_STATE.budgetItems, 0).freeSurplus === -36.00,
                 () => MotoEngine.calcQuincena(INITIAL_STATE.budgetItems, 75).freeSurplus === 39.00,
                 () => getCurrentFortnightRange(new Date(2026, 1, 16)).end === '2026-02-28',
@@ -1953,6 +2145,181 @@
             showToast(mode === 'patria' ? 'Modo Subsidio Patria 60L activo' : 'Modo Gasolina Internacional activo');
         }
 
+        const FUEL_WARNING_RANGE_KM = 30;
+
+        function getTrackedFuelDistance() {
+            return state.fuel.distanceSinceLevel;
+        }
+
+        function addRideDistanceToFuel(distance, fuelWasConfigured) {
+            if (fuelWasConfigured) {
+                state.fuel.distanceSinceLevel = +(state.fuel.distanceSinceLevel + Number(distance)).toFixed(1);
+            }
+        }
+
+        function removeRideDistanceFromFuel(ride) {
+            const trackedDistance = Number(ride.fuelDistanceTracked) || 0;
+            if (ride.fuelLevelSetAt === state.fuel.levelSetAt && trackedDistance > 0) {
+                state.fuel.distanceSinceLevel = Math.max(
+                    0,
+                    +(state.fuel.distanceSinceLevel - trackedDistance).toFixed(1)
+                );
+            }
+        }
+
+        function getFuelEstimate() {
+            if (!(state.fuel.tankCapacityL > 0) || !(state.fuel.efficiencyKmPerL > 0) || !(state.fuel.levelSetAt > 0)) {
+                return null;
+            }
+            return MotoEngine.estimateFuel(
+                state.fuel.levelLiters,
+                state.fuel.efficiencyKmPerL,
+                getTrackedFuelDistance()
+            );
+        }
+
+        function getRideFuelTracking(distance, configured) {
+            return {
+                fuelLevelSetAt: configured ? state.fuel.levelSetAt : 0,
+                fuelDistanceTracked: configured ? +Number(distance).toFixed(1) : 0
+            };
+        }
+
+        function showRideSavedToast(message, previousEstimate) {
+            const estimate = getFuelEstimate();
+            if (estimate && estimate.rangeKm <= FUEL_WARNING_RANGE_KM &&
+                (!previousEstimate || previousEstimate.rangeKm > FUEL_WARNING_RANGE_KM)) {
+                showToast(`⚠ Reposta pronto: quedan aprox. ${Math.floor(estimate.rangeKm)} km`);
+                return;
+            }
+            showToast(message);
+        }
+
+        function handleSaveFuelSetup(e) {
+            e.preventDefault();
+            const capacity = Number(document.getElementById('fuel-capacity-input').value);
+            const efficiency = Number(document.getElementById('fuel-efficiency-input').value);
+            const level = Number(document.getElementById('fuel-level-input').value);
+            if (!(capacity > 0) || !(efficiency > 0) || !Number.isFinite(level) || level < 0 || level > capacity) {
+                showToast('Revisa los datos: el nivel debe estar entre 0 y la capacidad del tanque');
+                return;
+            }
+            state.fuel = {
+                tankCapacityL: +capacity.toFixed(2),
+                efficiencyKmPerL: +efficiency.toFixed(2),
+                levelLiters: +level.toFixed(2),
+                levelSetAt: Date.now(),
+                distanceSinceLevel: 0
+            };
+            saveState();
+            renderAll();
+            showToast('Datos de gasolina y nivel actualizados');
+        }
+
+        function handleAddFuel(e) {
+            e.preventDefault();
+            const estimate = getFuelEstimate();
+            const addedLiters = Number(document.getElementById('fuel-added-input').value);
+            if (!estimate) {
+                showToast('Primero configura la capacidad, el rendimiento y el nivel actual');
+                return;
+            }
+            if (!(addedLiters > 0) || estimate.remainingLiters + addedLiters > state.fuel.tankCapacityL + 0.001) {
+                showToast(`La cantidad supera la capacidad disponible (${Math.max(0, state.fuel.tankCapacityL - estimate.remainingLiters).toFixed(1)} L)`);
+                return;
+            }
+            state.fuel.levelLiters = +Math.min(
+                state.fuel.tankCapacityL,
+                estimate.remainingLiters + addedLiters
+            ).toFixed(2);
+            state.fuel.levelSetAt = Date.now();
+            state.fuel.distanceSinceLevel = 0;
+            saveState();
+            document.getElementById('fuel-added-input').value = '';
+            renderAll();
+            showToast(`${addedLiters.toFixed(1)} L de gasolina registrados`);
+        }
+
+        function handleFillFuelTank() {
+            if (!(state.fuel.tankCapacityL > 0) || !(state.fuel.efficiencyKmPerL > 0)) {
+                showToast('Primero configura la capacidad y el rendimiento de tu moto');
+                return;
+            }
+            state.fuel.levelLiters = state.fuel.tankCapacityL;
+            state.fuel.levelSetAt = Date.now();
+            state.fuel.distanceSinceLevel = 0;
+            saveState();
+            renderAll();
+            showToast('Tanque lleno registrado');
+        }
+
+        function renderFuelDashboard() {
+            const estimate = getFuelEstimate();
+            const configured = Boolean(estimate);
+            const levelInput = document.getElementById('fuel-level-input');
+            const capacityInput = document.getElementById('fuel-capacity-input');
+            const efficiencyInput = document.getElementById('fuel-efficiency-input');
+            if (document.activeElement !== capacityInput) {
+                capacityInput.value = state.fuel.tankCapacityL > 0 ? state.fuel.tankCapacityL : '';
+            }
+            if (document.activeElement !== efficiencyInput) {
+                efficiencyInput.value = state.fuel.efficiencyKmPerL > 0 ? state.fuel.efficiencyKmPerL : '';
+            }
+            if (document.activeElement !== levelInput) {
+                levelInput.value = estimate ? estimate.remainingLiters.toFixed(1) : '';
+            }
+
+            const statusPill = document.getElementById('fuel-status-pill');
+            const alert = document.getElementById('fuel-alert');
+            const quickStatus = document.getElementById('fuel-quick-status');
+            if (!configured) {
+                document.getElementById('fuel-range-km').textContent = '— km';
+                document.getElementById('fuel-remaining-l').textContent = '— L';
+                document.getElementById('fuel-tank-capacity').textContent = 'del tanque';
+                document.getElementById('fuel-consumption').textContent = '— L/100 km';
+                document.getElementById('fuel-efficiency').textContent = '— km/L';
+                document.getElementById('fuel-distance').textContent = '— km';
+                document.getElementById('fuel-level-bar').style.width = '0%';
+                document.getElementById('fuel-level-caption').textContent = 'Nivel estimado del tanque';
+                statusPill.textContent = 'Sin configurar';
+                statusPill.className = 'pill-badge';
+                statusPill.style.cssText = 'background:#1e293b;border-color:#475569;color:#cbd5e1;';
+                alert.textContent = 'Configura la capacidad del tanque, el rendimiento y el nivel actual para empezar.';
+                alert.style.color = '#cbd5e1';
+                quickStatus.textContent = 'Configura tu gasolina para estimar la autonomía';
+                quickStatus.className = 'btn btn-soft';
+                return;
+            }
+
+            const remainingRange = Math.floor(estimate.rangeKm);
+            const lowFuel = estimate.rangeKm <= FUEL_WARNING_RANGE_KM;
+            const remainingLiters = Math.max(0, estimate.remainingLiters);
+            document.getElementById('fuel-range-km').textContent = `${remainingRange} km`;
+            document.getElementById('fuel-remaining-l').textContent = `${remainingLiters.toFixed(1)} L`;
+            document.getElementById('fuel-tank-capacity').textContent = `de ${state.fuel.tankCapacityL.toFixed(1)} L`;
+            document.getElementById('fuel-consumption').textContent =
+                `${(100 / state.fuel.efficiencyKmPerL).toFixed(1)} L/100 km`;
+            document.getElementById('fuel-efficiency').textContent = `${state.fuel.efficiencyKmPerL.toFixed(1)} km/L`;
+            document.getElementById('fuel-distance').textContent = `${estimate.distanceKm.toFixed(1)} km`;
+            const levelPct = Math.max(0, Math.min(100, (remainingLiters / state.fuel.tankCapacityL) * 100));
+            const levelBar = document.getElementById('fuel-level-bar');
+            levelBar.style.width = `${levelPct}%`;
+            levelBar.style.background = lowFuel ? '#fb7185' : '#34d399';
+            document.getElementById('fuel-level-caption').textContent = `${levelPct.toFixed(0)}% del tanque · estimación basada en carreras registradas`;
+            statusPill.textContent = lowFuel ? 'Repostar pronto' : 'Nivel estimado';
+            statusPill.className = lowFuel ? 'pill-badge pill-fail' : 'pill-badge pill-ok';
+            alert.textContent = lowFuel
+                ? `⚠ Reposta pronto: quedan aproximadamente ${remainingRange} km de autonomía.`
+                : `Tienes aproximadamente ${remainingRange} km antes de llegar al aviso de repostaje.`;
+            alert.style.color = lowFuel ? '#fda4af' : '#cbd5e1';
+            quickStatus.textContent = lowFuel
+                ? `⚠ Reposta pronto · aprox. ${remainingRange} km de autonomía`
+                : `⛽ Autonomía estimada: ${remainingRange} km · ${remainingLiters.toFixed(1)} L`;
+            quickStatus.className = lowFuel ? 'btn btn-soft' : 'btn btn-soft';
+            quickStatus.style.borderColor = lowFuel ? 'var(--amber-border)' : '';
+            quickStatus.style.color = lowFuel ? 'var(--amber)' : '';
+        }
+
         function applyRidePreset(amount, km, label) {
             document.getElementById('ride-amount').value = amount.toFixed(2);
             document.getElementById('ride-km').value = km.toFixed(1);
@@ -1993,6 +2360,8 @@
 
             if (!(amount > 0) || !(km > 0) || !note) return;
 
+            const previousFuelEstimate = getFuelEstimate();
+            addRideDistanceToFuel(km, Boolean(previousFuelEstimate));
             state.rides.unshift({
                 id: 'r_' + Date.now(),
                 date: activeDate,
@@ -2000,6 +2369,7 @@
                 amount: +amount.toFixed(2),
                 km: +km.toFixed(1),
                 fuelMode: state.fuelMode,
+                ...getRideFuelTracking(km, Boolean(previousFuelEstimate)),
                 method,
                 note
             });
@@ -2007,7 +2377,7 @@
             saveState();
             document.getElementById('ride-form').reset();
             renderAll();
-            showToast('Carrera agregada al Sobre Diario');
+            showRideSavedToast('Carrera agregada al Sobre Diario', previousFuelEstimate);
         }
 
         function openEditRide(id) {
@@ -2026,10 +2396,20 @@
             const id = document.getElementById('edit-ride-id').value;
             const idx = state.rides.findIndex(r => r.id === id);
             if (idx === -1) return;
+            const ride = state.rides[idx];
+            const updatedKm = +(parseFloat(document.getElementById('edit-ride-km').value) || 0).toFixed(1);
+            const trackedDistance = Number(ride.fuelDistanceTracked) || 0;
+            if (ride.fuelLevelSetAt === state.fuel.levelSetAt && trackedDistance > 0) {
+                state.fuel.distanceSinceLevel = Math.max(
+                    0,
+                    +(state.fuel.distanceSinceLevel + updatedKm - trackedDistance).toFixed(1)
+                );
+                ride.fuelDistanceTracked = updatedKm;
+            }
             state.rides[idx] = {
-                ...state.rides[idx],
+                ...ride,
                 amount: +(parseFloat(document.getElementById('edit-ride-amount').value) || 0).toFixed(2),
-                km: +(parseFloat(document.getElementById('edit-ride-km').value) || 0).toFixed(1),
+                km: updatedKm,
                 method: document.getElementById('edit-ride-method').value,
                 note: document.getElementById('edit-ride-note').value.trim()
             };
@@ -2042,6 +2422,7 @@
         function deleteRide(id) {
             const ride = state.rides.find(r => r.id === id);
             if (!ride || !confirm(`¿Eliminar la carrera "${ride.note}"?`)) return;
+            removeRideDistanceFromFuel(ride);
             state.rides = state.rides.filter(r => r.id !== id);
             saveState();
             renderAll();
@@ -2049,8 +2430,10 @@
         }
 
         function resetCurrentDayRides() {
-            const dayRideCount = state.rides.filter(r => r.date === activeDate).length;
+            const dayRides = state.rides.filter(r => r.date === activeDate);
+            const dayRideCount = dayRides.length;
             if (!dayRideCount || !confirm(`¿Eliminar las ${dayRideCount} carreras del ${activeDate}? Esta acción no se puede deshacer.`)) return;
+            for (const ride of dayRides) removeRideDistanceFromFuel(ride);
             state.rides = state.rides.filter(r => r.date !== activeDate);
             saveState();
             renderAll();
@@ -2099,10 +2482,12 @@
 
         function shareWhatsAppSummary() {
             const st = getDayStats(activeDate);
+            const emptyRideCount = st.list.filter(ride => ride.rideType === 'empty').length;
+            const serviceCount = st.list.length - emptyRideCount;
             const conv = MotoEngine.convertUsd(st.net, state.rates.bcv, state.rates.usdt);
             const msg = [
                 `🛵 *Cierre MotoFinanzas VE (${activeDate})*`,
-                `• Servicios: ${st.list.length} (${st.km} km)`,
+                `• Servicios: ${serviceCount} | Km vacíos: ${emptyRideCount} (${st.km} km totales)`,
                 `• Bruto: $${st.gross.toFixed(2)}`,
                 `• Gasolina: -$${st.gas.toFixed(2)} | Aceite: -$${st.maint.toFixed(2)}`,
                 `✅ *Neto Libre: $${st.net.toFixed(2)}* (${conv.bsBcv.toFixed(2)} Bs BCV)`
@@ -2117,9 +2502,164 @@
             origin: 'Cabudare',
             km: 22.5,
             watchId: null,
-            simTimer: null,
             coordsText: 'Listo'
         };
+
+        const emptyGpsState = {
+            watchId: null,
+            lastPosition: null,
+            distanceKm: 0,
+            startedAt: null,
+            date: null
+        };
+
+        function renderEmptyGpsTracking() {
+            const active = emptyGpsState.watchId !== null;
+            const distance = +emptyGpsState.distanceKm.toFixed(2);
+            const estimate = MotoEngine.calcRide(0, distance, state.fuelMode);
+            document.getElementById('empty-gps-distance').textContent = `${distance.toFixed(2)} km`;
+            document.getElementById('empty-gps-cost').textContent =
+                `$${(estimate.gasCost + estimate.maintCost).toFixed(2)}`;
+            document.getElementById('empty-gps-start').disabled = active;
+            document.getElementById('empty-gps-stop').disabled = !active;
+            document.getElementById('empty-gps-cancel').disabled = !active;
+            const status = document.getElementById('empty-gps-status');
+            status.textContent = active ? 'GPS activo' : 'Detenido';
+            status.className = active ? 'pill-badge pill-ok' : 'pill-badge';
+            if (!active) status.style.cssText = 'background:var(--sky-bg);color:var(--sky);';
+        }
+
+        function startEmptyGpsTracking() {
+            if (!navigator.geolocation) {
+                showToast('Este dispositivo no ofrece GPS. Verifica los permisos de ubicación.');
+                return;
+            }
+            if (!window.isSecureContext) {
+                showToast('El GPS requiere HTTPS. Abre la app desde GitHub Pages.');
+                return;
+            }
+
+            emptyGpsState.lastPosition = null;
+            emptyGpsState.distanceKm = 0;
+            emptyGpsState.startedAt = Date.now();
+            emptyGpsState.date = activeDate;
+            document.getElementById('empty-gps-message').textContent =
+                'Buscando señal GPS… mantén la app abierta y la pantalla activa durante el recorrido.';
+            try {
+                emptyGpsState.watchId = navigator.geolocation.watchPosition(
+                    handleEmptyGpsPosition,
+                    handleEmptyGpsError,
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+                );
+            } catch (error) {
+                emptyGpsState.startedAt = null;
+                emptyGpsState.date = null;
+                console.error('No se pudo iniciar el GPS para kilómetros vacíos.', error);
+                document.getElementById('empty-gps-message').textContent =
+                    'No se pudo iniciar el GPS. Revisa los permisos de ubicación e inténtalo de nuevo.';
+                showToast('No se pudo iniciar el GPS');
+                return;
+            }
+            renderEmptyGpsTracking();
+        }
+
+        function handleEmptyGpsPosition(position) {
+            const { latitude, longitude, accuracy } = position.coords;
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+                !Number.isFinite(accuracy) || accuracy > 100) {
+                document.getElementById('empty-gps-message').textContent =
+                    'Señal GPS imprecisa. Esperando una ubicación más fiable…';
+                return;
+            }
+
+            const current = { latitude, longitude, accuracy, timestamp: position.timestamp };
+            const previous = emptyGpsState.lastPosition;
+            emptyGpsState.lastPosition = current;
+            document.getElementById('empty-gps-message').textContent =
+                `Midiendo recorrido · precisión GPS ±${Math.round(accuracy)} m. Mantén la app abierta.`;
+
+            if (previous) {
+                const segmentKm = MotoEngine.haversineKm(
+                    previous.latitude, previous.longitude, current.latitude, current.longitude
+                );
+                const elapsedHours = Math.max(0, current.timestamp - previous.timestamp) / 3600000;
+                const maxPlausibleKm = Math.max(0.25, elapsedHours * 180);
+                if (segmentKm >= 0.01 && segmentKm <= maxPlausibleKm) {
+                    emptyGpsState.distanceKm = +(emptyGpsState.distanceKm + segmentKm).toFixed(3);
+                }
+            }
+            renderEmptyGpsTracking();
+        }
+
+        function handleEmptyGpsError(error) {
+            const messages = {
+                1: 'Permite el acceso a la ubicación para medir el recorrido.',
+                2: 'No se pudo obtener señal GPS. Intenta en un lugar abierto.',
+                3: 'El GPS tardó demasiado. Comprueba la señal e inténtalo de nuevo.'
+            };
+            document.getElementById('empty-gps-message').textContent =
+                messages[error.code] || 'Error al obtener la ubicación GPS.';
+            showToast(document.getElementById('empty-gps-message').textContent);
+            if (error.code === 1) cancelEmptyGpsTracking(false);
+        }
+
+        function stopEmptyGpsWatch() {
+            if (emptyGpsState.watchId !== null && navigator.geolocation) {
+                navigator.geolocation.clearWatch(emptyGpsState.watchId);
+            }
+            emptyGpsState.watchId = null;
+        }
+
+        function finishEmptyGpsTracking() {
+            stopEmptyGpsWatch();
+            const distanceKm = +emptyGpsState.distanceKm.toFixed(2);
+            const rideDate = emptyGpsState.date || activeDate;
+            if (distanceKm < 0.05) {
+                renderEmptyGpsTracking();
+                document.getElementById('empty-gps-message').textContent =
+                    'No se registraron 50 m válidos. Espera una señal mejor o cancela la medición.';
+                showToast('Recorrido muy corto o GPS sin señal suficiente');
+                return;
+            }
+
+            const previousFuelEstimate = getFuelEstimate();
+            addRideDistanceToFuel(distanceKm, Boolean(previousFuelEstimate));
+            state.rides.unshift({
+                id: 'r_' + Date.now(),
+                date: rideDate,
+                time: new Date(emptyGpsState.startedAt || Date.now()).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
+                amount: 0,
+                km: distanceKm,
+                fuelMode: state.fuelMode,
+                ...getRideFuelTracking(distanceKm, Boolean(previousFuelEstimate)),
+                rideType: 'empty',
+                method: 'Sin pasajero',
+                note: 'Kilometraje sin pasajero (GPS)'
+            });
+            emptyGpsState.lastPosition = null;
+            emptyGpsState.distanceKm = 0;
+            emptyGpsState.startedAt = null;
+            emptyGpsState.date = null;
+            saveState();
+            renderAll();
+            document.getElementById('empty-gps-message').textContent =
+                'Recorrido guardado como kilómetros sin pasajero. Las coordenadas GPS no se guardaron.';
+            showRideSavedToast(`Registrados ${distanceKm.toFixed(2)} km sin pasajero`, previousFuelEstimate);
+        }
+
+        function cancelEmptyGpsTracking(showMessage = true) {
+            stopEmptyGpsWatch();
+            emptyGpsState.lastPosition = null;
+            emptyGpsState.distanceKm = 0;
+            emptyGpsState.startedAt = null;
+            emptyGpsState.date = null;
+            renderEmptyGpsTracking();
+            if (showMessage) {
+                document.getElementById('empty-gps-message').textContent =
+                    'Medición cancelada; no se guardó ningún recorrido.';
+                showToast('Medición GPS cancelada');
+            }
+        }
 
         function selectGpsOrigin(name, km) {
             gpsState.origin = name;
@@ -2142,7 +2682,7 @@
                 return;
             }
             if (!navigator.geolocation) {
-                showToast('GPS no disponible, usa Simular GPS');
+                showToast('GPS no disponible en este dispositivo');
                 return;
             }
             document.getElementById('btn-live-gps').textContent = 'Detener GPS';
@@ -2158,35 +2698,10 @@
                     renderGpsSummary();
                 },
                 () => {
-                    showToast('Activa ubicación o usa Simular GPS');
+                    showToast('Activa el permiso de ubicación y verifica la señal GPS');
                 },
                 { enableHighAccuracy: true }
             );
-        }
-
-        function toggleSimulatedGps() {
-            if (gpsState.simTimer) {
-                clearInterval(gpsState.simTimer);
-                gpsState.simTimer = null;
-                document.getElementById('btn-sim-gps').textContent = 'Simular GPS Ruta';
-                document.getElementById('gps-status-pill').textContent = 'Simulación lista';
-                return;
-            }
-            document.getElementById('btn-sim-gps').textContent = 'Detener Simulación';
-            document.getElementById('gps-status-pill').textContent = 'Simulando GPS';
-            let remaining = gpsState.km;
-            gpsState.simTimer = setInterval(() => {
-                remaining = Math.max(0, +(remaining - 1.5).toFixed(1));
-                gpsState.coordsText = `Faltan ${remaining} km a Yaritagua`;
-                renderGpsSummary();
-                if (remaining <= 0) {
-                    clearInterval(gpsState.simTimer);
-                    gpsState.simTimer = null;
-                    document.getElementById('btn-sim-gps').textContent = 'Simular GPS Ruta';
-                    document.getElementById('gps-status-pill').textContent = 'Llegada Yaritagua';
-                    showToast('Llegada a Yaritagua simulada');
-                }
-            }, 900);
         }
 
         function renderGpsSummary() {
@@ -2203,6 +2718,8 @@
 
         function recordGpsReturnTrip() {
             const fare = Math.max(0, parseFloat(document.getElementById('gps-fare-input').value) || 0);
+            const previousFuelEstimate = getFuelEstimate();
+            addRideDistanceToFuel(gpsState.km, Boolean(previousFuelEstimate));
             state.rides.unshift({
                 id: 'r_' + Date.now(),
                 date: activeDate,
@@ -2210,13 +2727,14 @@
                 amount: +fare.toFixed(2),
                 km: +gpsState.km.toFixed(1),
                 fuelMode: state.fuelMode,
+                ...getRideFuelTracking(gpsState.km, Boolean(previousFuelEstimate)),
                 method: fare > 0 ? 'Efectivo $' : 'Sin cobro',
                 note: `Retorno GPS desde ${gpsState.origin} a Yaritagua`
             });
             saveState();
             renderAll();
             switchView('carreras');
-            showToast('Regreso a Yaritagua registrado');
+            showRideSavedToast('Regreso a Yaritagua registrado', previousFuelEstimate);
         }
 
         /* =====================================================================
@@ -2435,8 +2953,8 @@
                 html += `
                     <button type="button" class="${cls}" onclick="selectCalDay('${iso}')">
                         <span style="font-size:11px;font-weight:800;">${d}</span>
-                        <span style="font-size:9px;font-weight:800;color:${st.net > 0 ? 'var(--emerald)' : '#94a3b8'};">
-                            ${st.list.length > 0 ? `+$${st.net.toFixed(0)}` : '—'}
+                        <span style="font-size:9px;font-weight:800;color:${st.net < 0 ? 'var(--rose)' : st.net > 0 ? 'var(--emerald)' : '#94a3b8'};">
+                            ${st.list.length > 0 ? `${st.net < 0 ? '-' : '+'}$${Math.abs(st.net).toFixed(0)}` : '—'}
                         </span>
                         <span class="cal-dots">
                             ${st.list.length > 0 ? '<span class="dot" style="background:var(--emerald);"></span>' : ''}
@@ -2466,7 +2984,7 @@
             } else {
                 const rHtml = selSt.list.map(r => {
                     const c = calcStoredRide(r);
-                    return `<div class="item-row"><span class="item-title">🛵 ${escapeHtml(r.note)} (${c.km} km)</span><strong style="color:var(--emerald);font-size:12px;">+$${c.netProfit.toFixed(2)}</strong></div>`;
+                    return `<div class="item-row"><span class="item-title">${r.rideType === 'empty' ? '○' : '🛵'} ${escapeHtml(r.note)} (${c.km} km)</span><strong style="color:${c.netProfit < 0 ? 'var(--rose)' : 'var(--emerald)'};font-size:12px;">${c.netProfit < 0 ? '-' : '+'}$${Math.abs(c.netProfit).toFixed(2)}</strong></div>`;
                 }).join('');
                 const pHtml = dayPf.map(p => {
                     const inc = p.type === 'income';
@@ -2542,6 +3060,8 @@
 
         function registerQuotedRide() {
             const q = renderQuoter();
+            const previousFuelEstimate = getFuelEstimate();
+            addRideDistanceToFuel(q.dist, Boolean(previousFuelEstimate));
             state.rides.unshift({
                 id: 'r_' + Date.now(),
                 date: activeDate,
@@ -2549,13 +3069,14 @@
                 amount: q.suggested,
                 km: q.dist,
                 fuelMode: state.fuelMode,
+                ...getRideFuelTracking(q.dist, Boolean(previousFuelEstimate)),
                 method: 'Efectivo $',
                 note: `Carrera cotizada (${q.dist.toFixed(1)} km)`
             });
             saveState();
             renderAll();
             switchView('carreras');
-            showToast(`Carrera de $${q.suggested.toFixed(2)} registrada`);
+            showRideSavedToast(`Carrera de $${q.suggested.toFixed(2)} registrada`, previousFuelEstimate);
         }
 
         function exportBackupJson() {
@@ -2575,7 +3096,7 @@
             const rows = ['Fecha,Modulo,Tipo,Detalle,Km,Monto_USD'];
             for (const r of state.rides) {
                 const c = calcStoredRide(r);
-                rows.push(`${r.date},Moto,Neto,"${String(r.note).replace(/"/g, '""')}",${c.km},${c.netProfit.toFixed(2)}`);
+                rows.push(`${r.date},Moto,${r.rideType === 'empty' ? 'Km vacío' : 'Neto'},"${String(r.note).replace(/"/g, '""')}",${c.km},${c.netProfit.toFixed(2)}`);
             }
             for (const p of state.personalTxs) {
                 const signed = p.type === 'income' ? p.amount : -p.amount;
@@ -2627,7 +3148,7 @@
            10. RENDERIZADO GENERAL Y NAVEGACIÓN
            ===================================================================== */
         function switchView(view) {
-            const views = ['carreras', 'gps', 'quincena', 'calendario', 'personal'];
+            const views = ['carreras', 'gps', 'fuel', 'quincena', 'calendario', 'personal'];
             for (const v of views) {
                 document.getElementById(`view-${v}`).classList.toggle('hidden', v !== view);
                 document.getElementById(`nav-${v}`).classList.toggle('active', v === view);
@@ -2684,8 +3205,11 @@
 
             const st = getDayStats(activeDate);
             const netConv = MotoEngine.convertUsd(st.net, state.rates.bcv, state.rates.usdt);
+            const emptyRideCount = st.list.filter(ride => ride.rideType === 'empty').length;
+            const serviceCount = st.list.length - emptyRideCount;
             document.getElementById('kpi-gross').textContent = `$${st.gross.toFixed(2)}`;
-            document.getElementById('kpi-trips').textContent = `${st.list.length} carreras · ${st.km} km`;
+            document.getElementById('kpi-trips').textContent =
+                `${serviceCount} servicios · ${emptyRideCount} vacíos · ${st.km} km`;
             document.getElementById('kpi-gas').textContent = `-$${st.gas.toFixed(2)}`;
             document.getElementById('kpi-gas-mode').textContent = isPatria ? 'Subsidio 60L' : 'Tarifa Int.';
             document.getElementById('kpi-maint').textContent = `-$${st.maint.toFixed(2)}`;
@@ -2708,11 +3232,11 @@
                     return `
                         <div class="item-row tabular">
                             <div class="item-main">
-                                <div class="item-title">${escapeHtml(r.note)}</div>
-                                <div class="item-sub">${r.time} · ${c.km} km · ${escapeHtml(r.method)} · Bruto $${c.gross.toFixed(2)}</div>
+                                <div class="item-title">${r.rideType === 'empty' ? '○ ' : ''}${escapeHtml(r.note)}</div>
+                                <div class="item-sub">${r.time || ''} · ${c.km} km · ${escapeHtml(r.method)} · Bruto $${c.gross.toFixed(2)}</div>
                             </div>
                             <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
-                                <strong style="color:var(--emerald);font-size:13px;">+$${c.netProfit.toFixed(2)}</strong>
+                                <strong style="color:${c.netProfit < 0 ? 'var(--rose)' : 'var(--emerald)'};font-size:13px;">${c.netProfit < 0 ? '-' : '+'}$${Math.abs(c.netProfit).toFixed(2)}</strong>
                                 <button type="button" class="icon-btn" onclick="openEditRide('${r.id}')" title="Editar">✎</button>
                                 <button type="button" class="icon-btn" style="color:var(--rose);" onclick="deleteRide('${r.id}')" title="Eliminar">✕</button>
                             </div>
@@ -2831,6 +3355,8 @@
 
             // 7. GPS, Calendario y Cotizador
             renderGpsSummary();
+            renderFuelDashboard();
+            renderEmptyGpsTracking();
             renderCalendar();
             renderQuoter();
         }
