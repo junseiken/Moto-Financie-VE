@@ -2,8 +2,10 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>MotoFinanzas VE · Control Quincenal y Delivery</title>
@@ -1123,17 +1125,17 @@
             <div class="card card-dark tabular">
                 <div class="flex-between" style="margin-bottom:8px;">
                     <div>
-                        <span class="eyebrow" style="color:#34d399;">Plan Quincenal Híbrido</span>
+                        <span id="q-period-label" class="eyebrow" style="color:#34d399;">Plan Quincenal</span>
                         <h2 class="card-title" style="color:#ffffff;">Balance Quincena Junior</h2>
                     </div>
-                    <span id="quincena-surplus-badge" class="pill-badge pill-ok">+$0.00 libre</span>
+                    <span id="quincena-surplus-badge" class="pill-badge pill-fail">-$36.00 libre</span>
                 </div>
 
                 <div class="kpi-grid-4" style="margin:8px 0 0;">
                     <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
                         <span class="kpi-label" style="color:#94a3b8;">Ingresos Totales</span>
-                        <strong id="q-total-income" class="kpi-val" style="color:#34d399;">$185.00</strong>
-                        <span id="q-income-sub" class="kpi-sub">$110 BCV + $75 Moto</span>
+                        <strong id="q-total-income" class="kpi-val" style="color:#34d399;">$110.00</strong>
+                        <span id="q-income-sub" class="kpi-sub">$110 Base + $0 Moto</span>
                     </div>
                     <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
                         <span class="kpi-label" style="color:#94a3b8;">Gastos y Deudas</span>
@@ -1142,7 +1144,7 @@
                     </div>
                     <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
                         <span class="kpi-label" style="color:#94a3b8;">Excedente Libre</span>
-                        <strong id="q-free-surplus" class="kpi-val" style="color:#38bdf8;">$39.00</strong>
+                        <strong id="q-free-surplus" class="kpi-val" style="color:#38bdf8;">-$36.00</strong>
                         <span id="q-surplus-bs" class="kpi-sub">Para respaldo</span>
                     </div>
                     <div class="kpi-box" style="background:#1e293b;border-color:#334155;">
@@ -1648,7 +1650,7 @@
                     if (it.type === 'income') fixedIncome += val;
                     else totalExpense += val;
                 }
-                const deliveryFactor = ridesNet > 0 ? ridesNet : 75;
+                const deliveryFactor = Math.max(0, Number(ridesNet) || 0);
                 const totalIncome = +(fixedIncome + deliveryFactor).toFixed(2);
                 const freeSurplus = +(totalIncome - totalExpense).toFixed(2);
                 return {
@@ -1694,6 +1696,7 @@
             convDir: 'usd_to_bs',
             rides: [],
             personalTxs: [],
+            goalTransfers: [],
             budgetItems: [
                 { id: 'b_sal', type: 'income', label: 'Sueldo Base (BCV)', amount: 110, step: 5 },
                 { id: 'b_food', type: 'expense', label: 'Comida Mercado', amount: 40, step: 5 },
@@ -1709,6 +1712,8 @@
             ]
         };
 
+        let stateLoadWarning = false;
+        let persistenceError = false;
         let state = loadState();
         let activeDate = getTodayIso();
         let calMonthDate = new Date();
@@ -1719,21 +1724,98 @@
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
+        function getCurrentFortnightRange(date = new Date()) {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const isFirstFortnight = date.getDate() <= 15;
+            const startDay = isFirstFortnight ? 1 : 16;
+            const endDay = isFirstFortnight ? 15 : new Date(year, month + 1, 0).getDate();
+            const monthText = String(month + 1).padStart(2, '0');
+            return {
+                start: `${year}-${monthText}-${String(startDay).padStart(2, '0')}`,
+                end: `${year}-${monthText}-${String(endDay).padStart(2, '0')}`
+            };
+        }
+
+        function normalizeState(data) {
+            if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                throw new Error('La base de datos debe ser un objeto JSON.');
+            }
+            for (const key of ['rides', 'personalTxs', 'budgetItems', 'goals', 'goalTransfers']) {
+                if (data[key] !== undefined && !Array.isArray(data[key])) {
+                    throw new Error(`El campo ${key} no contiene una lista válida.`);
+                }
+            }
+            if (data.rates !== undefined && (!data.rates || typeof data.rates !== 'object' || Array.isArray(data.rates))) {
+                throw new Error('Las tasas del respaldo no son válidas.');
+            }
+            if (data.rates && ['bcv', 'usdt'].some(key =>
+                data.rates[key] !== undefined && (!Number.isFinite(Number(data.rates[key])) || Number(data.rates[key]) <= 0))) {
+                throw new Error('Las tasas del respaldo deben ser números positivos.');
+            }
+            const normalized = {
+                ...JSON.parse(JSON.stringify(INITIAL_STATE)),
+                ...data,
+                rates: { ...INITIAL_STATE.rates, ...(data.rates || {}) },
+                rides: Array.isArray(data.rides) ? data.rides : [],
+                personalTxs: Array.isArray(data.personalTxs) ? data.personalTxs : [],
+                budgetItems: Array.isArray(data.budgetItems) && data.budgetItems.length ? data.budgetItems : INITIAL_STATE.budgetItems,
+                goals: Array.isArray(data.goals) && data.goals.length ? data.goals : INITIAL_STATE.goals,
+                goalTransfers: Array.isArray(data.goalTransfers) ? data.goalTransfers : []
+            };
+            if (!['intl', 'patria'].includes(normalized.fuelMode)) normalized.fuelMode = 'intl';
+            normalized.rides = normalized.rides.map(ride => ride && typeof ride === 'object' ? ({
+                ...ride,
+                fuelMode: ride.fuelMode === 'patria' || ride.fuelMode === 'intl'
+                    ? ride.fuelMode
+                    : normalized.fuelMode
+            }) : ride);
+            for (const ride of normalized.rides) {
+                if (!ride || typeof ride.id !== 'string' || typeof ride.date !== 'string' ||
+                    !Number.isFinite(Number(ride.amount)) || !Number.isFinite(Number(ride.km)) ||
+                    typeof ride.note !== 'string') {
+                    throw new Error('El respaldo contiene carreras inválidas.');
+                }
+            }
+            for (const transaction of normalized.personalTxs) {
+                if (!transaction || typeof transaction.id !== 'string' ||
+                    !['income', 'expense'].includes(transaction.type) ||
+                    !Number.isFinite(Number(transaction.amount)) || Number(transaction.amount) < 0 ||
+                    typeof transaction.date !== 'string' || typeof transaction.note !== 'string') {
+                    throw new Error('El respaldo contiene movimientos personales inválidos.');
+                }
+            }
+            for (const item of normalized.budgetItems) {
+                if (!item || typeof item.id !== 'string' || !['income', 'expense'].includes(item.type) ||
+                    !Number.isFinite(Number(item.amount)) || Number(item.amount) < 0 || typeof item.label !== 'string') {
+                    throw new Error('El respaldo contiene partidas quincenales inválidas.');
+                }
+            }
+            for (const goal of normalized.goals) {
+                if (!goal || typeof goal.id !== 'string' || typeof goal.name !== 'string' ||
+                    !Number.isFinite(Number(goal.target)) || Number(goal.target) <= 0 ||
+                    !Number.isFinite(Number(goal.saved)) || Number(goal.saved) < 0) {
+                    throw new Error('El respaldo contiene metas inválidas.');
+                }
+            }
+            for (const transfer of normalized.goalTransfers) {
+                if (!transfer || typeof transfer.date !== 'string' ||
+                    typeof transfer.goalId !== 'string' ||
+                    !Number.isFinite(Number(transfer.amount)) || Number(transfer.amount) <= 0) {
+                    throw new Error('El respaldo contiene transferencias a metas inválidas.');
+                }
+            }
+            return normalized;
+        }
+
         function loadState() {
             try {
                 const raw = localStorage.getItem(DB_KEY);
-                if (!raw) return JSON.parse(JSON.stringify(INITIAL_STATE));
-                const p = JSON.parse(raw);
-                return {
-                    ...JSON.parse(JSON.stringify(INITIAL_STATE)),
-                    ...p,
-                    rates: { ...INITIAL_STATE.rates, ...(p.rates || {}) },
-                    rides: Array.isArray(p.rides) ? p.rides : [],
-                    personalTxs: Array.isArray(p.personalTxs) ? p.personalTxs : [],
-                    budgetItems: Array.isArray(p.budgetItems) && p.budgetItems.length ? p.budgetItems : INITIAL_STATE.budgetItems,
-                    goals: Array.isArray(p.goals) && p.goals.length ? p.goals : INITIAL_STATE.goals
-                };
-            } catch (_) {
+                if (!raw) return normalizeState(INITIAL_STATE);
+                return normalizeState(JSON.parse(raw));
+            } catch (error) {
+                stateLoadWarning = true;
+                console.error('No se pudo leer la base de datos guardada.', error);
                 return JSON.parse(JSON.stringify(INITIAL_STATE));
             }
         }
@@ -1741,11 +1823,18 @@
         function saveState() {
             try {
                 localStorage.setItem(DB_KEY, JSON.stringify(state));
-            } catch (_) {}
+                persistenceError = false;
+                return true;
+            } catch (error) {
+                persistenceError = true;
+                console.error('No se pudo guardar la base de datos local.', error);
+                showToast('No se pudo guardar. Exporta un respaldo y libera espacio.');
+                return false;
+            }
         }
 
         /* =====================================================================
-           3. SUITE DE 10 PRUEBAS UNITARIAS (1 SOLA EJECUCIÓN AL INICIAR)
+           3. SUITE DE PRUEBAS UNITARIAS (1 SOLA EJECUCIÓN AL INICIAR)
            ===================================================================== */
         function runSinglePassUnitTests() {
             const tests = [
@@ -1760,7 +1849,9 @@
                 () => MotoEngine.detectOriginNear(10.0331, -69.2633).name === 'Cabudare',
                 () => MotoEngine.detectOriginNear(10.0678, -69.3474).name === 'Barquisimeto',
                 () => MotoEngine.quoteFare(2, false, false).suggested === 1.50 && MotoEngine.quoteFare(10, true, true).suggested === 3.90,
+                () => MotoEngine.calcQuincena(INITIAL_STATE.budgetItems, 0).freeSurplus === -36.00,
                 () => MotoEngine.calcQuincena(INITIAL_STATE.budgetItems, 75).freeSurplus === 39.00,
+                () => getCurrentFortnightRange(new Date(2026, 1, 16)).end === '2026-02-28',
                 () => MotoEngine.buildIcsContent({ title: 'Test', dateIso: '2026-11-23', description: 'OK' }).includes('BEGIN:VCALENDAR')
             ];
 
@@ -1872,7 +1963,7 @@
             const list = state.rides.filter(r => r.date === dateIso);
             let gross = 0, gas = 0, maint = 0, net = 0, km = 0;
             for (const r of list) {
-                const c = MotoEngine.calcRide(r.amount, r.km, state.fuelMode);
+                const c = calcStoredRide(r);
                 gross += c.gross;
                 gas += c.gasCost;
                 maint += c.maintCost;
@@ -1887,6 +1978,10 @@
                 net: +net.toFixed(2),
                 km: +km.toFixed(1)
             };
+        }
+
+        function calcStoredRide(ride) {
+            return MotoEngine.calcRide(ride.amount, ride.km, ride.fuelMode || state.fuelMode);
         }
 
         function handleAddRide(e) {
@@ -1904,6 +1999,7 @@
                 time: new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
                 amount: +amount.toFixed(2),
                 km: +km.toFixed(1),
+                fuelMode: state.fuelMode,
                 method,
                 note
             });
@@ -1944,6 +2040,8 @@
         }
 
         function deleteRide(id) {
+            const ride = state.rides.find(r => r.id === id);
+            if (!ride || !confirm(`¿Eliminar la carrera "${ride.note}"?`)) return;
             state.rides = state.rides.filter(r => r.id !== id);
             saveState();
             renderAll();
@@ -1951,6 +2049,8 @@
         }
 
         function resetCurrentDayRides() {
+            const dayRideCount = state.rides.filter(r => r.date === activeDate).length;
+            if (!dayRideCount || !confirm(`¿Eliminar las ${dayRideCount} carreras del ${activeDate}? Esta acción no se puede deshacer.`)) return;
             state.rides = state.rides.filter(r => r.date !== activeDate);
             saveState();
             renderAll();
@@ -1959,12 +2059,17 @@
 
         function openSaveNetModal() {
             const st = getDayStats(activeDate);
-            if (st.net <= 0) {
-                showToast('No hay ganancia neta positiva hoy');
+            const alreadyTransferred = state.goalTransfers
+                .filter(transfer => transfer.date === activeDate)
+                .reduce((total, transfer) => total + Number(transfer.amount || 0), 0);
+            const available = Math.max(0, +(st.net - alreadyTransferred).toFixed(2));
+            if (available <= 0) {
+                showToast('No hay ganancia neta disponible para transferir');
                 return;
             }
-            document.getElementById('modal-net-avail').textContent = `$${st.net.toFixed(2)}`;
-            document.getElementById('modal-net-amount').value = st.net.toFixed(2);
+            document.getElementById('modal-net-avail').textContent = `$${available.toFixed(2)}`;
+            document.getElementById('modal-net-amount').max = available.toFixed(2);
+            document.getElementById('modal-net-amount').value = available.toFixed(2);
             const sel = document.getElementById('modal-net-goal-select');
             sel.innerHTML = state.goals.map(g => `<option value="${g.id}">${escapeHtml(g.name)} ($${g.saved}/$${g.target})</option>`).join('');
             openModal('modal-save-net');
@@ -1975,8 +2080,17 @@
             const goalId = document.getElementById('modal-net-goal-select').value;
             const amt = parseFloat(document.getElementById('modal-net-amount').value) || 0;
             const g = state.goals.find(x => x.id === goalId);
-            if (!g || amt <= 0) return;
+            const dayNet = getDayStats(activeDate).net;
+            const alreadyTransferred = state.goalTransfers
+                .filter(transfer => transfer.date === activeDate)
+                .reduce((total, transfer) => total + Number(transfer.amount || 0), 0);
+            const available = Math.max(0, +(dayNet - alreadyTransferred).toFixed(2));
+            if (!g || amt <= 0 || amt > available) {
+                showToast(`El monto debe estar entre $0.01 y $${available.toFixed(2)}`);
+                return;
+            }
             g.saved = +(g.saved + amt).toFixed(2);
+            state.goalTransfers.push({ date: activeDate, goalId, amount: +amt.toFixed(2) });
             saveState();
             closeModal('modal-save-net');
             renderAll();
@@ -2095,6 +2209,7 @@
                 time: new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
                 amount: +fare.toFixed(2),
                 km: +gpsState.km.toFixed(1),
+                fuelMode: state.fuelMode,
                 method: fare > 0 ? 'Efectivo $' : 'Sin cobro',
                 note: `Retorno GPS desde ${gpsState.origin} a Yaritagua`
             });
@@ -2155,6 +2270,8 @@
         }
 
         function deleteBudgetItem(id) {
+            const item = state.budgetItems.find(x => x.id === id);
+            if (!item || !confirm(`¿Eliminar la partida "${item.label}"?`)) return;
             state.budgetItems = state.budgetItems.filter(x => x.id !== id);
             saveState();
             renderAll();
@@ -2210,6 +2327,8 @@
         }
 
         function deleteGoal(id) {
+            const goal = state.goals.find(x => x.id === id);
+            if (!goal || !confirm(`¿Eliminar la meta "${goal.name}"?`)) return;
             state.goals = state.goals.filter(x => x.id !== id);
             saveState();
             renderAll();
@@ -2281,7 +2400,7 @@
             for (const r of state.rides) {
                 if (String(r.date).startsWith(prefix)) {
                     activeDaysSet.add(r.date);
-                    const c = MotoEngine.calcRide(r.amount, r.km, state.fuelMode);
+                    const c = calcStoredRide(r);
                     mGross += c.gross;
                     mNet += c.netProfit;
                     mKm += c.km;
@@ -2346,7 +2465,7 @@
                 itemsContainer.innerHTML = `<div class="item-row" style="justify-content:center;color:var(--text-muted);font-size:11px;">Sin registros en esta fecha</div>`;
             } else {
                 const rHtml = selSt.list.map(r => {
-                    const c = MotoEngine.calcRide(r.amount, r.km, state.fuelMode);
+                    const c = calcStoredRide(r);
                     return `<div class="item-row"><span class="item-title">🛵 ${escapeHtml(r.note)} (${c.km} km)</span><strong style="color:var(--emerald);font-size:12px;">+$${c.netProfit.toFixed(2)}</strong></div>`;
                 }).join('');
                 const pHtml = dayPf.map(p => {
@@ -2398,6 +2517,8 @@
         }
 
         function deletePersonalTx(id) {
+            const transaction = state.personalTxs.find(p => p.id === id);
+            if (!transaction || !confirm(`¿Eliminar el movimiento "${transaction.note}"?`)) return;
             state.personalTxs = state.personalTxs.filter(p => p.id !== id);
             saveState();
             renderAll();
@@ -2427,6 +2548,7 @@
                 time: new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
                 amount: q.suggested,
                 km: q.dist,
+                fuelMode: state.fuelMode,
                 method: 'Efectivo $',
                 note: `Carrera cotizada (${q.dist.toFixed(1)} km)`
             });
@@ -2452,7 +2574,7 @@
         function exportHistoryCsv() {
             const rows = ['Fecha,Modulo,Tipo,Detalle,Km,Monto_USD'];
             for (const r of state.rides) {
-                const c = MotoEngine.calcRide(r.amount, r.km, state.fuelMode);
+                const c = calcStoredRide(r);
                 rows.push(`${r.date},Moto,Neto,"${String(r.note).replace(/"/g, '""')}",${c.km},${c.netProfit.toFixed(2)}`);
             }
             for (const p of state.personalTxs) {
@@ -2478,15 +2600,25 @@
             reader.onload = (ev) => {
                 try {
                     const parsed = JSON.parse(ev.target.result);
-                    if (!parsed || typeof parsed !== 'object') throw new Error();
-                    state = { ...JSON.parse(JSON.stringify(INITIAL_STATE)), ...parsed };
-                    saveState();
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+                        !['rates', 'rides', 'personalTxs', 'budgetItems', 'goals'].some(key => key in parsed)) {
+                        throw new Error('El archivo no parece un respaldo de MotoFinanzas.');
+                    }
+                    const previousState = state;
+                    state = normalizeState(parsed);
+                    if (!saveState()) {
+                        state = previousState;
+                        renderAll();
+                        return;
+                    }
                     renderAll();
                     showToast('Base de datos restaurada');
-                } catch (_) {
-                    showToast('Archivo JSON inválido');
+                } catch (error) {
+                    console.error('No se pudo restaurar el respaldo.', error);
+                    showToast(error.message || 'Archivo JSON inválido');
                 }
             };
+            reader.onerror = () => showToast('No se pudo leer el archivo de respaldo');
             reader.readAsText(file);
             event.target.value = '';
         }
@@ -2522,7 +2654,9 @@
         let toastTimeout = null;
         function showToast(msg) {
             const el = document.getElementById('toast-banner');
-            el.textContent = msg;
+            el.textContent = persistenceError && !msg.startsWith('No se pudo guardar')
+                ? `No se guardó localmente. ${msg}`
+                : msg;
             el.classList.remove('hidden');
             clearTimeout(toastTimeout);
             toastTimeout = setTimeout(() => el.classList.add('hidden'), 2400);
@@ -2561,7 +2695,7 @@
             // Total acumulado neto de todas las carreras
             let allRidesNet = 0;
             for (const r of state.rides) {
-                allRidesNet += MotoEngine.calcRide(r.amount, r.km, state.fuelMode).netProfit;
+                allRidesNet += calcStoredRide(r).netProfit;
             }
             document.getElementById('total-net-rides-badge').textContent = `$${allRidesNet.toFixed(2)}`;
 
@@ -2570,7 +2704,7 @@
                 ridesContainer.innerHTML = `<div class="item-row" style="justify-content:center;color:var(--text-muted);font-size:12px;">Sin carreras registradas en esta fecha</div>`;
             } else {
                 ridesContainer.innerHTML = st.list.map(r => {
-                    const c = MotoEngine.calcRide(r.amount, r.km, state.fuelMode);
+                    const c = calcStoredRide(r);
                     return `
                         <div class="item-row tabular">
                             <div class="item-main">
@@ -2588,7 +2722,12 @@
             }
 
             // 4. Quincena
-            const cf = MotoEngine.calcQuincena(state.budgetItems, allRidesNet);
+            const fortnight = getCurrentFortnightRange();
+            const fortnightRideNet = state.rides
+                .filter(ride => ride.date >= fortnight.start && ride.date <= fortnight.end)
+                .reduce((total, ride) => total + calcStoredRide(ride).netProfit, 0);
+            const cf = MotoEngine.calcQuincena(state.budgetItems, fortnightRideNet);
+            document.getElementById('q-period-label').textContent = `Quincena ${fortnight.start} al ${fortnight.end}`;
             document.getElementById('q-total-income').textContent = `$${cf.totalIncome.toFixed(2)}`;
             document.getElementById('q-income-sub').textContent = `$${cf.fixedIncome} Base + $${cf.deliveryFactor} Moto`;
             document.getElementById('q-total-expense').textContent = `$${cf.totalExpense.toFixed(2)}`;
@@ -2706,8 +2845,16 @@
             badge.className = report.ok ? 'pill-badge pill-ok tabular' : 'pill-badge pill-fail tabular';
 
             renderAll();
+            if (stateLoadWarning) showToast('No se pudo leer el historial; se inició una base vacía. Importa un respaldo para recuperarlo.');
             if (state.rates.lastSync !== getTodayIso()) {
                 syncAllRates(false);
+            }
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js')
+                    .catch(error => {
+                        console.error('No se pudo activar el modo instalable/offline.', error);
+                        showToast('No se pudo activar el modo offline. Revisa la conexión y recarga.');
+                    });
             }
         });
     </script>
